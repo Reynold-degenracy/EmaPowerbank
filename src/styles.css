@@ -166,8 +166,33 @@ code {
   animation: auth-tab-pop 180ms ease both;
 }
 
+.auth-panel .segmented button,
 .provider-mode-toggle button {
   font-weight: 800;
+}
+
+:root[data-theme="light"] .auth-panel .segmented,
+:root[data-theme="light"] .provider-mode-toggle {
+  background: var(--blue-25);
+  border-color: var(--blue-100);
+}
+
+:root[data-theme="light"] .auth-panel .segmented button,
+:root[data-theme="light"] .provider-mode-toggle button {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .auth-panel .segmented button:not(.active):hover,
+:root[data-theme="light"] .provider-mode-toggle button:not(.active):hover {
+  background: var(--blue-50);
+  color: var(--blue-800);
+}
+
+:root[data-theme="light"] .auth-panel .segmented button.active,
+:root[data-theme="light"] .provider-mode-toggle button.active {
+  background: var(--blue-600);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(26, 115, 232, 0.22), 0 8px 18px rgba(60, 64, 67, 0.14);
 }
 
 .form-stack {
