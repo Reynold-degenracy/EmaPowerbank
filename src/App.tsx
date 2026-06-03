@@ -29,633 +29,79 @@ import {
   X,
 } from "lucide-react";
 import { api } from "./api";
+import { messages, type Lang, type Messages } from "./i18n";
+import { getErrorMessage } from "./lib/errors";
+import {
+  formatCostWithUsage,
+  formatCurrencyInputValue,
+  formatDate,
+  formatDateTime,
+  formatDateTimeSeconds,
+  formatDurationMs,
+  formatJson,
+  formatLogValue,
+  formatNumber,
+  formatPercent,
+  formatPreciseCurrency,
+  formatPricePerMillion,
+  formatRequestRatio,
+  formatStatCurrency,
+  localDateTimeToIso,
+  maskKey,
+} from "./lib/format";
+import {
+  defaultTestBodyForModel,
+  preferredTestModel,
+  testPathForModel,
+} from "./lib/models";
+import {
+  chartColors,
+  chartDepth,
+  aggregateDailyRows,
+  costParts,
+  emptyStats,
+  requestLogUsage,
+  sumParts,
+  usageParts,
+} from "./lib/usage";
+import {
+  sortedTimingEntries,
+  timingSegmentColor,
+  timingSegmentLabels,
+} from "./lib/timing";
+import type {
+  AdminData,
+  ApiKey,
+  AvailableModel,
+  Numberish,
+  Overview,
+  PricingItem,
+  ProviderInfo,
+  ReloadFn,
+  RequestLogDetailResponse,
+  RequestLogDetailState,
+  RequestLogListResponse,
+  RequestLogSummary,
+  RequestTiming,
+  SegmentKey,
+  ThemeMode,
+  UsageRow,
+  UsageSummary,
+  User,
+} from "./types";
 
-const emptyStats: UsageRow = {
-  requestCount: 0,
-  successCount: 0,
-  cachedContentTokenCount: 0,
-  promptTokenCount: 0,
-  thoughtsTokenCount: 0,
-  candidatesTokenCount: 0,
-  billableCharacterCount: 0,
-  cost: 0,
-  totalCost: 0,
-  todayCost: 0,
-  cachedCost: 0,
-  uncachedCost: 0,
-  outputCost: 0,
-  embeddingCost: 0,
-};
 
-const messages = {
-  zh: {
-    account: "账户",
-    actions: "操作",
-    admin: "管理",
-    adminConsole: "管理控制台",
-    aiStudioApiKey: "API Key",
-    allModels: "全部模型",
-    allUsers: "全部用户",
-    apiKeys: "API 密钥",
-    apiKey: "API Key",
-    apiKeyRequired: "请先新建一个 API key",
-    availableModels: "可用模型",
-    balance: "余额",
-    balanceUnit: "USD",
-    baseUrl: "Base URL",
-    baseUrlHelp: "在 Google GenAI SDK 或兼容客户端的 Base URL 填写这个地址。",
-    byDate: "按日期",
-    byModel: "按模型",
-    cachedTokens: "缓存输入",
-    cacheHitRate: "缓存命中率",
-    candidatesTokens: "候选token数",
-    clearFilters: "清空筛选",
-    configKey: "Key",
-    configured: "已配置",
-    cumulativeTokens: "累计 Token 数",
-    copy: "复制",
-    copied: "已复制",
-    cost: "费用",
-    cancel: "取消",
-    addPrice: "新增",
-    cannotDeleteSelf: "不能删除当前登录用户",
-    confirmAddPrice: "确认新增模型计费？",
-    confirmDelete: "确认删除",
-    confirmDeletePrice: "确认删除该模型计费？",
-    confirmDeleteUser: "确认删除该用户？",
-    confirmSaveBalance: "确认保存余额？",
-    confirmClearProvider: "确认清空上游配置？",
-    confirmSaveProvider: "确认保存上游配置？",
-    currentProvider: "当前生效",
-    create: "创建",
-    createdAt: "创建时间",
-    dashboard: "面板",
-    date: "日期",
-    deletePrice: "删除价格",
-    deleteUser: "删除用户",
-    endDate: "结束时间",
-    dark: "暗",
-    duplicateAlias: "已存在同名 API key 别名",
-    duration: "耗时",
-    endpoint: "Gemini REST",
-    endpointHelp: "请求路径继续使用 Gemini REST 形状，只是在本地服务前加 /api。",
-    embeddingInput: "嵌入",
-    embeddingTokens: "嵌入",
-    invalidJson: "请求体不是有效 JSON",
-    fullKeyUnavailable: "旧密钥只保存了哈希，无法显示完整值。请新建一个 key 后复制。",
-    fileName: "文件名",
-    globalStats: "全局统计",
-    headers: "请求头",
-    input: "输入",
-    keyName: "别名",
-    language: "语言",
-    light: "亮",
-    location: "Location",
-    login: "登录",
-    logout: "退出",
-    model: "模型",
-    modelExists: "该模型计费已存在，请先删除后再新增",
-    modelDetails: "模型明细",
-    modelPricing: "模型计费",
-    newKey: "新建 API key",
-    noData: "暂无记录",
-    noUsableKey: "请新建一个可复制的 API key 后测试",
-    notConfigured: "未配置",
-    output: "输出",
-    outputTokens: "输出",
-    password: "密码",
-    confirmPassword: "确认密码",
-    hidePassword: "隐藏密码",
-    passwordMismatch: "两次输入的密码不一致",
-    requestBody: "请求体",
-    requestPath: "请求路径",
-    requestSuccessTotal: "成功请求 / 总请求数",
-    response: "响应",
-    pricing: "Pricing",
-    processing: "处理中",
-    provider: "Provider",
-    providerKeyRequired: "请填写上游凭证",
-    register: "注册",
-    registeredAt: "注册日期",
-    requestCount: "请求数",
-    requestLogs: "日志",
-    requestSuccessRate: "请求成功率",
-    revoke: "删除",
-    role: "角色",
-    save: "保存",
-    saveBalance: "保存余额",
-    savePrice: "保存价格",
-    selectKey: "选择 API key",
-    sendTest: "发送测试",
-    showPassword: "显示密码",
-    signedIn: "已登录",
-    startDate: "开始时间",
-    statusCode: "状态码",
-    system: "系统",
-    theme: "主题",
-    timing: "分段耗时",
-    totalCost: "累计费用",
-    totalDuration: "总耗时",
-    totalConsumed: "累计费用",
-    totalSpent: "已消费金额",
-    todayConsumed: "今日花费",
-    testApi: "API 测试",
-    uncachedTokens: "未缓存输入",
-    unavailable: "不可用",
-    upstream: "上游",
-    upstreamConfig: "上游配置",
-    usage: "用量",
-    usageStats: "费用统计",
-    userDashboard: "用户面板",
-    userManagement: "用户管理",
-    userRole: "用户",
-    username: "用户名",
-    users: "用户",
-    clearProvider: "清空配置",
-    vertexServiceAccountJson: "服务账号",
-  },
-  en: {
-    account: "Account",
-    actions: "Actions",
-    admin: "Admin",
-    adminConsole: "Admin console",
-    aiStudioApiKey: "API Key",
-    allModels: "All models",
-    allUsers: "All users",
-    apiKeys: "API keys",
-    apiKey: "API key",
-    apiKeyRequired: "Create an API key first",
-    availableModels: "Available models",
-    balance: "Balance",
-    balanceUnit: "USD",
-    baseUrl: "Base URL",
-    baseUrlHelp: "Set this address as the Base URL in Google GenAI SDKs or compatible clients.",
-    byDate: "By date",
-    byModel: "By model",
-    cachedTokens: "Cached tokens",
-    cacheHitRate: "Cache hit rate",
-    candidatesTokens: "Candidate tokens",
-    clearFilters: "Clear filters",
-    configKey: "Key",
-    configured: "Configured",
-    cumulativeTokens: "Cumulative tokens",
-    copy: "Copy",
-    copied: "Copied",
-    cost: "Cost",
-    cancel: "Cancel",
-    addPrice: "Add",
-    cannotDeleteSelf: "Cannot delete the current signed-in user",
-    confirmAddPrice: "Add this model pricing?",
-    confirmDelete: "Confirm delete",
-    confirmDeletePrice: "Delete this model pricing?",
-    confirmDeleteUser: "Delete this user?",
-    confirmSaveBalance: "Save this balance?",
-    confirmClearProvider: "Clear upstream provider settings?",
-    confirmSaveProvider: "Save upstream provider settings?",
-    currentProvider: "Active provider",
-    create: "Create",
-    createdAt: "Created",
-    dashboard: "Dashboard",
-    date: "Date",
-    deletePrice: "Delete price",
-    deleteUser: "Delete user",
-    endDate: "End time",
-    dark: "Dark",
-    duplicateAlias: "An API key alias with this name already exists",
-    duration: "Duration",
-    endpoint: "Gemini REST",
-    endpointHelp: "Keep the Gemini REST path shape and prefix it with /api on this local service.",
-    embeddingInput: "Embedding",
-    embeddingTokens: "Embedding tokens",
-    invalidJson: "Request body is not valid JSON",
-    fullKeyUnavailable: "Older keys were stored as hashes only. Create a new key to copy its full value.",
-    fileName: "File name",
-    globalStats: "Global stats",
-    headers: "Headers",
-    input: "Input",
-    keyName: "Alias",
-    language: "Language",
-    light: "Light",
-    location: "Location",
-    login: "Log in",
-    logout: "Log out",
-    model: "Model",
-    modelExists: "This model pricing already exists. Delete it before adding it again.",
-    modelDetails: "Model details",
-    modelPricing: "Model pricing",
-    newKey: "Create API key",
-    noData: "No records",
-    noUsableKey: "Create a copyable API key before testing",
-    notConfigured: "Not configured",
-    output: "Output",
-    outputTokens: "Output tokens",
-    password: "Password",
-    confirmPassword: "Confirm password",
-    hidePassword: "Hide password",
-    passwordMismatch: "Passwords do not match",
-    requestBody: "Request body",
-    requestPath: "Request path",
-    requestSuccessTotal: "Successful / total requests",
-    response: "Response",
-    pricing: "Pricing",
-    processing: "Processing",
-    provider: "Provider",
-    providerKeyRequired: "Provider credential is required",
-    register: "Register",
-    registeredAt: "Registered",
-    requestCount: "Requests",
-    requestLogs: "Logs",
-    requestSuccessRate: "Request success rate",
-    revoke: "Delete",
-    role: "Role",
-    save: "Save",
-    saveBalance: "Save balance",
-    savePrice: "Save price",
-    selectKey: "Select API key",
-    sendTest: "Send test",
-    showPassword: "Show password",
-    signedIn: "Signed in",
-    startDate: "Start time",
-    statusCode: "Status code",
-    system: "System",
-    theme: "Theme",
-    timing: "Timing",
-    totalCost: "Accumulated cost",
-    totalDuration: "Total duration",
-    totalConsumed: "Total spent",
-    totalSpent: "Total spent",
-    todayConsumed: "Today spent",
-    testApi: "API test",
-    uncachedTokens: "Uncached tokens",
-    unavailable: "Unavailable",
-    upstream: "Upstream",
-    upstreamConfig: "Upstream config",
-    usage: "Usage",
-    usageStats: "Cost stats",
-    userDashboard: "User dashboard",
-    userManagement: "User management",
-    userRole: "User",
-    username: "Username",
-    users: "Users",
-    clearProvider: "Clear config",
-    vertexServiceAccountJson: "Service account",
-  },
-};
-
-type Lang = "zh" | "en";
-type ThemeMode = "system" | "light" | "dark";
-type Messages = typeof messages.zh;
-type SegmentKey = "embedding" | "cached" | "uncached" | "output";
-type Numberish = number | string | null | undefined;
-
-interface UsageRow {
-  date?: string;
-  modelId?: string;
-  requestCount?: Numberish;
-  successCount?: Numberish;
-  cachedContentTokenCount?: Numberish;
-  promptTokenCount?: Numberish;
-  thoughtsTokenCount?: Numberish;
-  candidatesTokenCount?: Numberish;
-  billableCharacterCount?: Numberish;
-  cost?: Numberish;
-  totalCost?: Numberish;
-  todayCost?: Numberish;
-  cachedCost?: Numberish;
-  uncachedCost?: Numberish;
-  outputCost?: Numberish;
-  embeddingCost?: Numberish;
-}
-
-interface User {
-  id: number;
-  username: string;
-  role: "admin" | "user";
-  balance: number;
-  totalSpent?: number;
-  createdAt?: string;
-}
-
-interface ApiKey {
-  id: number;
-  name: string;
-  key: string | null;
-  keyPrefix: string;
-  createdAt: string;
-  lastUsedAt?: string | null;
-  revokedAt?: string | null;
-}
-
-interface AvailableModel {
-  modelId: string;
-  inputPrice: number;
-  outputPrice: number;
-  cachePrice: number;
-  embeddingInputPrice: number;
-}
-
-interface UsageSummary {
-  requestCount: number;
-  successCount: number;
-  totalCost: number;
-  todayCost: number;
-  successRate: number;
-}
-
-interface Overview {
-  user: User;
-  apiKeys: ApiKey[];
-  dailyStats?: UsageRow[];
-  dailyModelStats?: UsageRow[];
-  modelStats?: UsageRow[];
-  usageSummary?: UsageSummary;
-  availableModels?: AvailableModel[];
-  recentUsage?: unknown[];
-}
-
-interface ProviderInfo {
-  mode?: "ai_studio" | "vertex";
-  location?: string;
-  projectId?: string;
-  configured?: boolean;
-  keyPreview?: string;
-  updatedAt?: string;
-}
-
-interface PricingItem extends AvailableModel {
-  id: number;
-  updatedAt?: string;
-}
-
-interface AdminData {
-  users?: User[];
-  provider?: ProviderInfo | null;
-  pricing?: PricingItem[];
-  dailyStats?: UsageRow[];
-  dailyModelStats?: UsageRow[];
-  modelStats?: UsageRow[];
-  totals?: UsageRow;
-}
-
-interface RequestLogSummary {
-  id: number;
-  userId: number;
-  username: string;
-  apiKeyId?: number | null;
-  apiKeyPrefix?: string | null;
-  modelId?: string | null;
-  endpoint: string;
-  requestPath: string;
-  usageDate: string;
-  statusCode: number;
-  cachedContentTokenCount: number;
-  promptTokenCount: number;
-  thoughtsTokenCount: number;
-  candidatesTokenCount: number;
-  billableCharacterCount: number;
-  cost: number;
-  durationMs?: number;
-  timing?: RequestTiming | null;
-  auditFileName: string;
-  createdAt: string;
-}
-
-interface RequestLogListResponse {
-  logs?: RequestLogSummary[];
-  users?: User[];
-  page?: number;
-  pageSize?: number;
-  total?: number;
-  totalPages?: number;
-}
-
-interface RequestLogDetailPayload {
-  timestamp?: string;
-  userId?: number;
-  apiKeyId?: number;
-  provider?: Record<string, unknown>;
-  upstreamUrl?: string | null;
-  request?: {
-    method?: string;
-    path?: string;
-    headers?: unknown;
-    body?: unknown;
-  };
-  response?: {
-    statusCode?: number;
-    body?: unknown;
-    error?: unknown;
-  };
-  billing?: {
-    usage?: unknown;
-    cost?: Numberish;
-  };
-  timing?: RequestTiming | null;
-}
-
-interface RequestTiming {
-  totalMs: number;
-  segments: Record<string, number>;
-}
-
-interface RequestLogDetailResponse {
-  log: RequestLogSummary;
-  detail: RequestLogDetailPayload | null;
-  raw?: string;
-}
-
-interface RequestLogDetailState {
-  loading?: boolean;
-  error?: string;
-  detail?: RequestLogDetailPayload | null;
-  raw?: string;
-}
-
-type ReloadFn = () => Promise<void> | void;
-type SegmentParts = Record<SegmentKey, number>;
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-const chartColors: Record<SegmentKey, string> = {
-  embedding: "#bfdbfe",
-  cached: "#60a5fa",
-  uncached: "#2563eb",
-  output: "#1e3a8a",
-};
-
-const chartDepth: Record<SegmentKey, number> = {
-  embedding: 1,
-  cached: 2,
-  uncached: 3,
-  output: 4,
-};
-
-function usageParts(row: UsageRow = {}): SegmentParts {
-  const cached = Number(row.cachedContentTokenCount || 0);
-  const prompt = Number(row.promptTokenCount || 0);
-  const thoughts = Number(row.thoughtsTokenCount || 0);
-  const candidates = Number(row.candidatesTokenCount || 0);
-  return {
-    cached,
-    uncached: Math.max(prompt - cached, 0),
-    output: thoughts + candidates,
-    embedding: Number(row.billableCharacterCount || 0),
-  };
-}
-
-function rawCostParts(row: UsageRow = {}): SegmentParts {
-  return {
-    cached: Number(row.cachedCost || 0),
-    uncached: Number(row.uncachedCost || 0),
-    output: Number(row.outputCost || 0),
-    embedding: Number(row.embeddingCost || 0),
-  };
-}
-
-function costParts(row: UsageRow = {}): SegmentParts {
-  const parts = rawCostParts(row);
-  const componentTotal = parts.cached + parts.uncached + parts.output + parts.embedding;
-  const recordedTotal = Number(row.cost || 0);
-  if (componentTotal === 0 && recordedTotal > 0) {
-    return { ...parts, output: recordedTotal };
-  }
-  return parts;
-}
-
-function sumParts(parts: Record<string, number>) {
-  return Object.values(parts).reduce((acc, value) => acc + Number(value || 0), 0);
-}
-
-function aggregateDailyRows(rows: UsageRow[] = []): UsageRow[] {
-  const byDate = new Map<string, UsageRow>();
-  for (const row of rows) {
-    const date = row.date || "";
-    if (!date) continue;
-    const existing = byDate.get(date) || {
-      date,
-      requestCount: 0,
-      successCount: 0,
-      cachedContentTokenCount: 0,
-      promptTokenCount: 0,
-      thoughtsTokenCount: 0,
-      candidatesTokenCount: 0,
-      billableCharacterCount: 0,
-      cost: 0,
-      cachedCost: 0,
-      uncachedCost: 0,
-      outputCost: 0,
-      embeddingCost: 0,
-    };
-    existing.requestCount = Number(existing.requestCount || 0) + Number(row.requestCount || 0);
-    existing.successCount = Number(existing.successCount || 0) + Number(row.successCount || 0);
-    existing.cachedContentTokenCount = Number(existing.cachedContentTokenCount || 0) + Number(row.cachedContentTokenCount || 0);
-    existing.promptTokenCount = Number(existing.promptTokenCount || 0) + Number(row.promptTokenCount || 0);
-    existing.thoughtsTokenCount = Number(existing.thoughtsTokenCount || 0) + Number(row.thoughtsTokenCount || 0);
-    existing.candidatesTokenCount = Number(existing.candidatesTokenCount || 0) + Number(row.candidatesTokenCount || 0);
-    existing.billableCharacterCount = Number(existing.billableCharacterCount || 0) + Number(row.billableCharacterCount || 0);
-    existing.cost = Number(existing.cost || 0) + Number(row.cost || 0);
-    existing.cachedCost = Number(existing.cachedCost || 0) + Number(row.cachedCost || 0);
-    existing.uncachedCost = Number(existing.uncachedCost || 0) + Number(row.uncachedCost || 0);
-    existing.outputCost = Number(existing.outputCost || 0) + Number(row.outputCost || 0);
-    existing.embeddingCost = Number(existing.embeddingCost || 0) + Number(row.embeddingCost || 0);
-    byDate.set(date, existing);
-  }
-  return [...byDate.values()].sort((left, right) => String(right.date).localeCompare(String(left.date)));
-}
-
-function outputTokens(row: UsageRow = {}) {
-  return Number(row.thoughtsTokenCount || 0) + Number(row.candidatesTokenCount || 0);
-}
-
-function localeFor(lang: Lang) {
-  return lang === "zh" ? "zh-CN" : "en-US";
-}
-
-function formatNumber(value: Numberish, lang: Lang) {
-  return new Intl.NumberFormat(localeFor(lang)).format(Number(value || 0));
-}
-
-function formatDurationMs(value: Numberish, lang: Lang) {
-  const duration = Number(value || 0);
-  if (!Number.isFinite(duration) || duration <= 0) return "-";
-
-  if (duration < 1000) {
-    const decimals = duration < 10 ? 2 : duration < 100 ? 1 : 0;
-    return `${new Intl.NumberFormat(localeFor(lang), {
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-    }).format(duration)} ms`;
-  }
-
-  return `${new Intl.NumberFormat(localeFor(lang), {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(duration / 1000)} s`;
-}
-
-function formatMoney(value: Numberish, lang: Lang) {
-  return new Intl.NumberFormat(localeFor(lang), {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 8,
-  }).format(Number(value || 0));
-}
-
-function formatBalance(value: Numberish, lang: Lang) {
-  return new Intl.NumberFormat(localeFor(lang), {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
-}
-
-function formatCost(value: Numberish, lang: Lang) {
-  return new Intl.NumberFormat(localeFor(lang), {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
-}
-
-function formatDollar(value: Numberish, lang: Lang) {
-  return `$${formatCost(value, lang)}`;
-}
-
-function formatDollarFixed(value: Numberish, lang: Lang, fractionDigits: number) {
-  return `$${new Intl.NumberFormat(localeFor(lang), {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  }).format(Number(value || 0))}`;
-}
-
-function formatPricePerMillion(value: Numberish, lang: Lang) {
-  return `${formatDollar(value, lang)}/M`;
-}
-
-function formatMillion(value: Numberish, lang: Lang) {
-  return `${new Intl.NumberFormat(localeFor(lang), {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0) / 1_000_000)}M`;
-}
-
-function formatCostWithUsage(cost: Numberish, usage: Numberish, lang: Lang) {
-  return `${formatDollar(cost, lang)} (${formatMillion(usage, lang)})`;
-}
-
-function formatRequestRatio(successCount: Numberish, requestCount: Numberish, lang: Lang) {
-  return `${formatNumber(successCount, lang)} / ${formatNumber(requestCount, lang)}`;
-}
-
-function formatPercent(value: Numberish, lang: Lang) {
-  return new Intl.NumberFormat(localeFor(lang), {
-    style: "percent",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
+function Stat({ label, value, tone = "blue" }: { label: string; value: string | number; tone?: string }) {
+  return (
+    <div className={`stat stat-${tone}`} aria-label={`${label}: ${value}`} title={label}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  );
 }
 
 function formatPriceOrUnavailable(value: Numberish, lang: Lang, t: Messages): ReactNode {
-  if (Number(value || 0) > 0) return formatMoney(value, lang);
+  if (Number(value || 0) > 0) return formatPreciseCurrency(value, lang);
   return <span className="price-unavailable" title={t.unavailable} aria-label={t.unavailable}>-</span>;
 }
 
@@ -668,185 +114,6 @@ function modelPriceParts(item: AvailableModel, t: Messages, lang: Lang) {
   ]
     .filter(([, value]) => Number(value || 0) > 0)
     .map(([label, value]) => `${label} ${formatPricePerMillion(value, lang)}`);
-}
-
-function isEmbeddingModelId(modelId = "") {
-  return /embedding/i.test(modelId);
-}
-
-function preferredTestModel(models: AvailableModel[] = []) {
-  const modelIds = models.map((item) => item.modelId).filter(Boolean);
-  return modelIds.includes("gemini-3.5-flash") ? "gemini-3.5-flash" : modelIds[0] || "gemini-3.5-flash";
-}
-
-function testPathForModel(modelId: string) {
-  const action = isEmbeddingModelId(modelId) ? "batchEmbedContents" : "generateContent";
-  return `/api/v1beta/models/${encodeURIComponent(modelId)}:${action}`;
-}
-
-function defaultTestBodyForModel(modelId: string) {
-  if (isEmbeddingModelId(modelId)) {
-    return {
-      requests: [
-        {
-          model: modelId,
-          content: {
-            role: "user",
-            parts: [{ text: "Who are you?" }],
-          },
-        },
-      ],
-    };
-  }
-
-  return {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: "Who are you?" }],
-      },
-    ],
-  };
-}
-
-function formatJson(value: unknown) {
-  return JSON.stringify(value, null, 2);
-}
-
-function formatDateTime(value: string | null | undefined, lang: Lang) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(localeFor(lang), {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
-function formatDate(value: string | null | undefined, lang: Lang) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(localeFor(lang), {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
-}
-
-function formatDateTimeSeconds(value: string | null | undefined, lang: Lang) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(localeFor(lang), {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
-}
-
-function formatLogValue(value: unknown) {
-  if (value === undefined || value === null || value === "") return "-";
-  if (typeof value === "string") {
-    try {
-      return JSON.stringify(JSON.parse(value), null, 2);
-    } catch {
-      return value;
-    }
-  }
-
-  try {
-    const serialized = JSON.stringify(value, null, 2);
-    return serialized === undefined ? String(value) : serialized;
-  } catch {
-    return String(value);
-  }
-}
-
-const timingSegmentLabels: Record<string, { zh: string; en: string }> = {
-  preflightMs: { zh: "预检", en: "Preflight" },
-  upstreamSetupMs: { zh: "上游准备", en: "Upstream setup" },
-  vertexAccessTokenMs: { zh: "Vertex token", en: "Vertex token" },
-  requestTransformMs: { zh: "请求转换", en: "Request transform" },
-  upstreamHeadersMs: { zh: "上游首包", en: "Upstream headers" },
-  upstreamBodyMs: { zh: "上游响应体", en: "Upstream body" },
-  responseTransformMs: { zh: "响应转换", en: "Response transform" },
-  downstreamResponseMs: { zh: "客户端响应", en: "Client response" },
-  usageBillingMs: { zh: "用量计费", en: "Usage billing" },
-  auditLogMs: { zh: "审计写入", en: "Audit write" },
-  errorHandlingMs: { zh: "错误处理", en: "Error handling" },
-  untrackedMs: { zh: "其他", en: "Other" },
-};
-
-const timingSegmentOrder = Object.keys(timingSegmentLabels);
-
-const timingSegmentColors: Record<string, string> = {
-  preflightMs: "#7aa2d8",
-  upstreamSetupMs: "#7ab8ad",
-  vertexAccessTokenMs: "#a58acb",
-  requestTransformMs: "#d4a56f",
-  upstreamHeadersMs: "#76aac2",
-  upstreamBodyMs: "#8bbf8f",
-  responseTransformMs: "#c9a36f",
-  downstreamResponseMs: "#cf8fa8",
-  usageBillingMs: "#8f9ed8",
-  auditLogMs: "#9aa4b2",
-  errorHandlingMs: "#d58b86",
-  untrackedMs: "#b4bbc6",
-};
-
-function sortedTimingEntries(timing: RequestTiming | null | undefined) {
-  if (!timing) return [];
-  const entries = Object.entries(timing.segments || {})
-    .filter(([, value]) => Number.isFinite(Number(value)))
-    .sort(([left], [right]) => {
-      const leftIndex = timingSegmentOrder.indexOf(left);
-      const rightIndex = timingSegmentOrder.indexOf(right);
-      if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
-      if (leftIndex === -1) return 1;
-      if (rightIndex === -1) return -1;
-      return leftIndex - rightIndex;
-    });
-  const segmentTotal = entries.reduce((total, [, value]) => total + Number(value || 0), 0);
-  const untracked = Math.max(Number(timing.totalMs || 0) - segmentTotal, 0);
-  if (untracked > 0.5) {
-    entries.push(["untrackedMs", Number(untracked.toFixed(2))]);
-  }
-  return entries;
-}
-
-function timingSegmentColor(key: string) {
-  return timingSegmentColors[key] || "#b4bbc6";
-}
-
-function localDateTimeToIso(value: string) {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
-}
-
-function requestLogUsage(log: RequestLogSummary) {
-  const totalTokens = Number(log.cachedContentTokenCount || 0)
-    + Math.max(Number(log.promptTokenCount || 0) - Number(log.cachedContentTokenCount || 0), 0)
-    + Number(log.thoughtsTokenCount || 0)
-    + Number(log.candidatesTokenCount || 0)
-    + Number(log.billableCharacterCount || 0);
-  return totalTokens;
-}
-
-function maskKey(value = "") {
-  if (!value) return "";
-  if (value.length <= 18) return value;
-  return `${value.slice(0, 12)}...${value.slice(-8)}`;
-}
-
-function Stat({ label, value, tone = "blue" }: { label: string; value: string | number; tone?: string }) {
-  return (
-    <div className={`stat stat-${tone}`} aria-label={`${label}: ${value}`} title={label}>
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </div>
-  );
 }
 
 function PreferenceControls({
@@ -1065,7 +332,7 @@ function CostBarChart({ rows = [], t, lang }: { rows?: UsageRow[]; t: Messages; 
           const label = rawLabel.slice(5);
           return (
             <div className="chart-day" key={`cost-${rawLabel}-${index}`}>
-              <div className="bar-value" title={formatCostWithUsage(total, tokenTotal, lang)}>{formatDollar(total, lang)}</div>
+              <div className="bar-value" title={formatCostWithUsage(total, tokenTotal, lang)}>{formatStatCurrency(total, lang)}</div>
               <div className="bar-shell">
                 <div className="bar-stack" style={{ height: `${barHeight}px` }} title={`${rawLabel}: ${formatCostWithUsage(total, tokenTotal, lang)}`}>
                   {segments.map(([key, label]) => {
@@ -1179,7 +446,7 @@ function UsageTable({ rows = [], t, lang }: { rows?: UsageRow[]; t: Messages; la
               <tr className={selectedDate === row.date ? "selected" : ""} key={row.date} onClick={() => setSelectedDate(row.date || "")}>
                 <td>{row.date}</td>
                 <td className="right">{formatRequestRatio(row.successCount, row.requestCount, lang)}</td>
-                <td className="right">{formatDollar(row.cost, lang)}</td>
+                <td className="right">{formatStatCurrency(row.cost, lang)}</td>
                 <td className="right">{formatCostWithUsage(row.cachedCost, row.cached, lang)}</td>
                 <td className="right">{formatCostWithUsage(row.uncachedCost, row.uncached, lang)}</td>
                 <td className="right">{formatCostWithUsage(row.outputCost, row.output, lang)}</td>
@@ -1264,7 +531,7 @@ function ModelUsageTable({ rows = [], t, lang }: { rows?: UsageRow[]; t: Message
                 <td className="right">{formatNumber(row.uncached, lang)}</td>
                 <td className="right">{formatNumber(row.output, lang)}</td>
                 <td className="right">{formatNumber(row.embedding, lang)}</td>
-                <td className="right">{formatCost(row.cost, lang)}</td>
+                <td className="right">{formatStatCurrency(row.cost, lang)}</td>
               </tr>
             ))}
           </tbody>
@@ -1555,9 +822,9 @@ function Dashboard({
       <section className="panel wide account-panel">
         <div className="account-strip account-summary-strip">
           <div className="stats-grid account-stats account-summary-stats">
-            <Stat label={t.balance} value={formatDollar(overview.user.balance, lang)} />
-            <Stat label={t.totalConsumed} value={formatDollar(usageSummary.totalCost, lang)} tone="rose" />
-            <Stat label={t.todayConsumed} value={formatDollar(usageSummary.todayCost, lang)} tone="amber" />
+            <Stat label={t.balance} value={formatStatCurrency(overview.user.balance, lang)} />
+            <Stat label={t.totalCost} value={formatStatCurrency(usageSummary.totalCost, lang)} tone="rose" />
+            <Stat label={t.todayConsumed} value={formatStatCurrency(usageSummary.todayCost, lang)} tone="amber" />
             <Stat label={t.requestSuccessRate} value={formatPercent(usageSummary.successRate, lang)} tone="green" />
           </div>
         </div>
@@ -1810,7 +1077,7 @@ function ProviderForm({
           </label>
         )}
         <label>
-          {mode === "vertex" ? t.vertexServiceAccountJson : t.aiStudioApiKey}
+          {mode === "vertex" ? t.vertexServiceAccountJson : t.apiKey}
           {mode === "vertex" ? (
             <textarea value={key} onChange={(event) => setKey(event.target.value)} rows={6} placeholder={vertexPlaceholder} />
           ) : (
@@ -1974,13 +1241,13 @@ function UsersPanel({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setBalances(Object.fromEntries(users.map((user) => [user.id, Number(user.balance || 0).toFixed(4)])));
+    setBalances(Object.fromEntries(users.map((user) => [user.id, formatCurrencyInputValue(user.balance, 4)])));
   }, [users]);
 
-  function formatBalanceEdit(userId: number) {
+  function normalizeBalanceEdit(userId: number) {
     setBalances((current) => ({
       ...current,
-      [userId]: Number(current[userId] || 0).toFixed(4),
+      [userId]: formatCurrencyInputValue(current[userId], 4),
     }));
   }
 
@@ -2058,7 +1325,7 @@ function UsersPanel({
                   </span>
                 </td>
                 <td className="date-cell">{formatDate(item.createdAt, lang)}</td>
-                <td>{formatDollarFixed(item.totalSpent || 0, lang, 4)}</td>
+                <td>{formatPreciseCurrency(item.totalSpent || 0, lang)}</td>
                 <td className="balance-cell">
                   <div className="balance-edit">
                     <input
@@ -2068,7 +1335,7 @@ function UsersPanel({
                       step="0.0001"
                       value={balances[item.id] ?? 0}
                       onChange={(event) => setBalances((current) => ({ ...current, [item.id]: event.target.value }))}
-                      onBlur={() => formatBalanceEdit(item.id)}
+                      onBlur={() => normalizeBalanceEdit(item.id)}
                     />
                     <button className="icon-btn primary" title={t.saveBalance} onClick={() => save(item.id)} type="button">
                       <Save size={16} aria-hidden="true" />
@@ -2336,6 +1603,7 @@ function RequestLogsPanel({
           const responseText = detail?.response?.error
             ? formatLogValue(detail.response.error)
             : formatLogValue(detail?.response?.body);
+          const billingCost = detail?.billing?.cost;
 
           return (
             <article className={`request-log-card ${opened ? "open" : ""}`} key={log.id}>
@@ -2354,7 +1622,7 @@ function RequestLogsPanel({
                   <div className="request-log-meta">
                     <span><strong>{t.requestPath}</strong><code>{log.requestPath}</code></span>
                     <span><strong>{t.apiKey}</strong><code>{log.apiKeyPrefix ? `${log.apiKeyPrefix}...` : "-"}</code></span>
-                    <span><strong>{t.cost}</strong>{formatDollar(log.cost, lang)}</span>
+                    <span><strong>{t.cost}</strong>{formatPreciseCurrency(log.cost, lang)}</span>
                     <span><strong>{t.duration}</strong>{durationText}</span>
                     <span><strong>{t.cumulativeTokens}</strong>{formatNumber(requestLogUsage(log), lang)}</span>
                     <span><strong>{t.fileName}</strong><code>{log.auditFileName || "-"}</code></span>
@@ -2370,7 +1638,10 @@ function RequestLogsPanel({
                       <RequestLogBlock title={t.response} text={responseText} tone={statusOk ? "green" : "red"} />
                       <RequestLogBlock
                         title={t.usage}
-                        text={formatLogValue({ cost: detail.billing?.cost, usage: detail.billing?.usage })}
+                        text={formatLogValue({
+                          cost: billingCost === undefined || billingCost === null ? undefined : formatPreciseCurrency(billingCost, lang),
+                          usage: detail.billing?.usage,
+                        })}
                         tone="blue"
                       />
                       <RequestLogBlock
@@ -2430,8 +1701,8 @@ function AdminPanel({
             </div>
           </div>
           <div className="stats-grid">
-            <Stat label={t.totalCost} value={formatDollar(totals.totalCost, lang)} tone="rose" />
-            <Stat label={t.todayConsumed} value={formatDollar(totals.todayCost, lang)} tone="amber" />
+            <Stat label={t.totalCost} value={formatStatCurrency(totals.totalCost, lang)} tone="rose" />
+            <Stat label={t.todayConsumed} value={formatStatCurrency(totals.todayCost, lang)} tone="amber" />
             <Stat label={t.requestCount} value={formatNumber(totals.requestCount, lang)} />
             <Stat label={t.requestSuccessRate} value={formatPercent(successRate, lang)} tone="green" />
             <Stat label={t.cumulativeTokens} value={formatNumber(totalTokens, lang)} tone="blue" />
