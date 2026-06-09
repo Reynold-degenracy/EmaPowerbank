@@ -8,9 +8,11 @@ import {
   useState,
 } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   Copy,
   Eye,
   EyeOff,
@@ -80,6 +82,10 @@ import type {
   PricingItem,
   ProviderInfo,
   FeedbackSubmitResponse,
+  FeedbackListResponse,
+  FeedbackReviewActionResponse,
+  FeedbackReviewItem,
+  FeedbackReviewStatus,
   ReloadFn,
   RequestLogDetailResponse,
   RequestLogDetailState,
@@ -97,6 +103,7 @@ const FEEDBACK_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
 const FEEDBACK_IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,image/webp,image/bmp,image/avif,image/heic,image/heif";
 const FEEDBACK_IMAGE_NAME_PATTERN = /\.(png|jpe?g|gif|webp|bmp|avif|hei[cf])$/i;
 const FEEDBACK_IMAGE_TYPES = new Set(FEEDBACK_IMAGE_ACCEPT.split(","));
+const FEEDBACK_REWARD_TIERS = [1, 3, 5, 10];
 
 function Stat({ label, value, tone = "blue" }: { label: string; value: string | number; tone?: string }) {
   return (
@@ -826,6 +833,7 @@ function FeedbackPanel({ t, lang }: { t: Messages; lang: Lang }) {
             <h2>{t.feedback}</h2>
           </div>
         </div>
+        <div className="inline-info feedback-reward-notice">{t.feedbackRewardNotice}</div>
         <form className="feedback-form" onSubmit={submitFeedback}>
           <label>
             {t.feedbackDescription}
@@ -1462,15 +1470,18 @@ function UsersPanel({
                 <td>{formatPreciseCurrency(item.totalSpent || 0, lang)}</td>
                 <td className="balance-cell">
                   <div className="balance-edit">
-                    <input
-                      className="cell-input"
-                      aria-label={`${item.username} ${t.balance}`}
-                      type="number"
-                      step="0.0001"
-                      value={balances[item.id] ?? 0}
-                      onChange={(event) => setBalances((current) => ({ ...current, [item.id]: event.target.value }))}
-                      onBlur={() => normalizeBalanceEdit(item.id)}
-                    />
+                    <div className="currency-input-wrap">
+                      <span className="currency-prefix" aria-hidden="true">$</span>
+                      <input
+                        className="cell-input currency-input"
+                        aria-label={`${item.username} ${t.balance}`}
+                        type="number"
+                        step="0.1"
+                        value={balances[item.id] ?? 0}
+                        onChange={(event) => setBalances((current) => ({ ...current, [item.id]: event.target.value }))}
+                        onBlur={() => normalizeBalanceEdit(item.id)}
+                      />
+                    </div>
                     <button className="icon-btn primary" title={t.saveBalance} onClick={() => save(item.id)} type="button">
                       <Save size={16} aria-hidden="true" />
                     </button>
@@ -1485,6 +1496,218 @@ function UsersPanel({
             ))}
           </tbody>
         </table>
+      </div>
+    </section>
+  );
+}
+
+function feedbackStatusLabel(status: FeedbackReviewStatus, t: Messages) {
+  if (status === "approved") return t.feedbackStatusApproved;
+  if (status === "rejected") return t.feedbackStatusRejected;
+  return t.feedbackStatusPending;
+}
+
+function FeedbackReviewPanel({
+  reload,
+  t,
+  lang,
+}: {
+  reload: ReloadFn;
+  t: Messages;
+  lang: Lang;
+}) {
+  const [status, setStatus] = useState<FeedbackReviewStatus>("pending");
+  const [feedbacks, setFeedbacks] = useState<FeedbackReviewItem[]>([]);
+  const [rewardDrafts, setRewardDrafts] = useState<Record<string, string>>({});
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [refreshToken, setRefreshToken] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    api<FeedbackListResponse>(`/api/admin/feedbacks?status=${status}`)
+      .then((data) => {
+        if (cancelled) return;
+        const rows = data.feedbacks || [];
+        setFeedbacks(rows);
+        setRewardDrafts((current) => ({
+          ...Object.fromEntries(rows.filter((item) => item.review.status === "pending").map((item) => [item.id, current[item.id] || "5"])),
+        }));
+      })
+      .catch((err) => {
+        if (!cancelled) setError(getErrorMessage(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, refreshToken]);
+
+  function setBusy(id: string, busy: boolean) {
+    setBusyIds((current) => {
+      const next = new Set(current);
+      if (busy) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function updateReward(id: string, value: string) {
+    setRewardDrafts((current) => ({ ...current, [id]: value }));
+    setError("");
+  }
+
+  async function approve(item: FeedbackReviewItem) {
+    const rewardAmount = Number(rewardDrafts[item.id] || 0);
+    setError("");
+    if (!Number.isFinite(rewardAmount) || rewardAmount <= 0) {
+      setError(t.feedbackRewardRequired);
+      return;
+    }
+    setBusy(item.id, true);
+    try {
+      await api<FeedbackReviewActionResponse>(`/api/admin/feedbacks/${item.id}/approve`, {
+        method: "POST",
+        body: { rewardAmount },
+      });
+      await reload();
+      setRefreshToken((current) => current + 1);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(item.id, false);
+    }
+  }
+
+  async function reject(item: FeedbackReviewItem) {
+    setError("");
+    if (!window.confirm(t.confirmRejectFeedback)) return;
+    setBusy(item.id, true);
+    try {
+      await api<FeedbackReviewActionResponse>(`/api/admin/feedbacks/${item.id}/reject`, { method: "POST" });
+      setRefreshToken((current) => current + 1);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(item.id, false);
+    }
+  }
+
+  return (
+    <section className="panel wide feedback-review-panel">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">{t.feedback}</span>
+          <h2>{t.feedbackReview}</h2>
+        </div>
+      </div>
+      <div className="feedback-review-filters segmented compact" role="tablist" aria-label={t.feedbackReviewStatus}>
+        {(["pending", "approved", "rejected"] as FeedbackReviewStatus[]).map((item) => (
+          <button
+            className={status === item ? "active" : ""}
+            key={item}
+            onClick={() => setStatus(item)}
+            type="button"
+          >
+            {feedbackStatusLabel(item, t)}
+          </button>
+        ))}
+      </div>
+      {error && <div className="inline-error">{error}</div>}
+      <div className="feedback-review-list" aria-busy={loading}>
+        {loading && feedbacks.length === 0 ? (
+          <div className="request-log-empty">{t.processing}</div>
+        ) : feedbacks.length === 0 ? (
+          <div className="request-log-empty">{t.noData}</div>
+        ) : feedbacks.map((item) => {
+          const isBusy = busyIds.has(item.id);
+          const reviewed = item.review.status !== "pending";
+          return (
+            <article className="feedback-review-card" key={item.id}>
+              <div className="feedback-review-main">
+                <div className="feedback-review-head">
+                  <div>
+                    <strong>{item.user.username}</strong>
+                    <span>{t.feedbackReviewSubmittedAt}: {formatDateTimeSeconds(item.timestamp, lang)}</span>
+                  </div>
+                  <span className={`feedback-status feedback-status-${item.review.status}`}>
+                    {feedbackStatusLabel(item.review.status, t)}
+                  </span>
+                </div>
+                <p>{item.description}</p>
+                <div className="feedback-review-meta">
+                  <span><strong>{t.feedbackPackageName}</strong><code>{item.packageName}</code></span>
+                  {item.attachment ? (
+                    <span><strong>{t.feedbackAttachment}</strong><code>{item.attachment.originalName}</code></span>
+                  ) : (
+                    <span><strong>{t.feedbackAttachment}</strong>{t.noData}</span>
+                  )}
+                  {reviewed && (
+                    <span><strong>{t.feedbackReward}</strong>{formatNumber(item.review.rewardAmount, lang)}</span>
+                  )}
+                  {item.review.reviewedBy && (
+                    <span><strong>{t.admin}</strong>{item.review.reviewedBy.username}</span>
+                  )}
+                  {item.review.reviewedAt && (
+                    <span><strong>{t.feedbackReviewedAt}</strong>{formatDateTimeSeconds(item.review.reviewedAt, lang)}</span>
+                  )}
+                </div>
+                {item.review.status === "pending" && (
+                  <div className="feedback-review-actions">
+                    <div className="reward-controls">
+                      <span>{t.feedbackReviewTiers}</span>
+                      <div className="reward-tier-list">
+                        {FEEDBACK_REWARD_TIERS.map((tier) => (
+                          <button
+                            className={Number(rewardDrafts[item.id] || 0) === tier ? "active" : ""}
+                            key={tier}
+                            onClick={() => updateReward(item.id, String(tier))}
+                            type="button"
+                          >
+                            ${formatCurrencyInputValue(tier, 2)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="reward-manual">
+                      {t.feedbackRewardManual}
+                      <div className="currency-input-wrap">
+                        <span className="currency-prefix" aria-hidden="true">$</span>
+                        <input
+                          className="currency-input"
+                          min="0"
+                          step="0.1"
+                          type="number"
+                          value={rewardDrafts[item.id] || "5"}
+                          onChange={(event) => updateReward(item.id, event.target.value)}
+                        />
+                      </div>
+                    </label>
+                    <button className="primary-btn compact-action" disabled={isBusy} onClick={() => approve(item)} type="button">
+                      <Check size={17} aria-hidden="true" />
+                      {t.feedbackReviewApprove}
+                    </button>
+                    <button className="primary-btn danger-action compact-action" disabled={isBusy} onClick={() => reject(item)} type="button">
+                      <X size={17} aria-hidden="true" />
+                      {t.feedbackReviewReject}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {item.attachment && (
+                <div className="feedback-preview">
+                  <img alt={item.attachment.originalName} src={`/api/admin/feedbacks/${item.id}/attachment`} />
+                </div>
+              )}
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -1868,7 +2091,7 @@ function AdminPanel({
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<"dashboard" | "admin" | "requestLogs" | "feedback">("dashboard");
+  const [active, setActive] = useState<"dashboard" | "admin" | "requestLogs" | "feedback" | "feedbackReview">("dashboard");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [adminData, setAdminData] = useState<AdminData | null>(null);
   const [error, setError] = useState("");
@@ -1885,6 +2108,8 @@ export default function App() {
       ? t.requestLogs
       : active === "feedback"
         ? t.feedback
+        : active === "feedbackReview"
+          ? t.feedbackReview
       : t.userDashboard;
 
   function setLang(value: Lang) {
@@ -1943,7 +2168,8 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     setError("");
-    if (user.role !== "admin" && active === "admin") setActive("dashboard");
+    if (user.role !== "admin" && (active === "admin" || active === "feedbackReview")) setActive("dashboard");
+    if (user.role === "admin" && active === "feedback") setActive("feedbackReview");
     loadDashboard().catch((err) => setError(getErrorMessage(err)));
     if (user.role === "admin") loadAdmin().catch((err) => setError(getErrorMessage(err)));
   }, [user]);
@@ -1991,10 +2217,17 @@ export default function App() {
             <FileText size={18} aria-hidden="true" />
             {t.requestLogs}
           </button>
-          <button className={active === "feedback" ? "active" : ""} onClick={() => setActive("feedback")} type="button">
-            <MessageSquare size={18} aria-hidden="true" />
-            {t.feedback}
-          </button>
+          {user.role === "admin" ? (
+            <button className={active === "feedbackReview" ? "active" : ""} onClick={() => setActive("feedbackReview")} type="button">
+              <ClipboardCheck size={18} aria-hidden="true" />
+              {t.feedbackReview}
+            </button>
+          ) : (
+            <button className={active === "feedback" ? "active" : ""} onClick={() => setActive("feedback")} type="button">
+              <MessageSquare size={18} aria-hidden="true" />
+              {t.feedback}
+            </button>
+          )}
         </nav>
       </aside>
       <section className="content">
@@ -2029,6 +2262,8 @@ export default function App() {
               )
             : active === "feedback"
               ? <FeedbackPanel t={t} lang={lang} />
+              : active === "feedbackReview" && user.role === "admin"
+                ? <div className="page-grid"><FeedbackReviewPanel reload={loadAdmin} t={t} lang={lang} /></div>
             : overview && <Dashboard overview={overview} reload={loadDashboard} t={t} lang={lang} />}
       </section>
     </main>

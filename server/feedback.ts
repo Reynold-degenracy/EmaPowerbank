@@ -47,6 +47,33 @@ export interface FeedbackPayload {
   attachment?: FeedbackAttachmentInput;
 }
 
+export interface FeedbackAttachmentMetadata {
+  fileName: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+}
+
+export type FeedbackReviewStatus = "pending" | "approved" | "rejected";
+export type FeedbackReviewFilter = FeedbackReviewStatus | "all";
+
+export interface FeedbackReview {
+  status: FeedbackReviewStatus;
+  rewardAmount: number;
+  reviewedBy: FeedbackUser | null;
+  reviewedAt: string | null;
+}
+
+export interface FeedbackMetadata {
+  id: string;
+  timestamp: string;
+  packageName: string;
+  user: FeedbackUser;
+  description: string;
+  attachment: FeedbackAttachmentMetadata | null;
+  review: FeedbackReview;
+}
+
 export interface MultipartPart {
   name: string;
   filename?: string;
@@ -58,12 +85,8 @@ export interface FeedbackPackageResult {
   id: string;
   timestamp: string;
   packageName: string;
-  attachment?: {
-    fileName: string;
-    originalName: string;
-    mimeType: string;
-    size: number;
-  };
+  attachment?: FeedbackAttachmentMetadata;
+  review: FeedbackReview;
 }
 
 export class FeedbackError extends Error {
@@ -74,6 +97,12 @@ export class FeedbackError extends Error {
     this.name = "FeedbackError";
     this.status = status;
   }
+}
+
+const reviewLocks = new Map<string, Promise<void>>();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function decodeHeaderValue(value: string) {
@@ -89,6 +118,102 @@ function dispositionValue(header: string, key: string) {
 
 function safeTimestamp(timestamp: string) {
   return timestamp.replace(/[:.]/g, "-");
+}
+
+function defaultReview(): FeedbackReview {
+  return {
+    status: "pending",
+    rewardAmount: 0,
+    reviewedBy: null,
+    reviewedAt: null,
+  };
+}
+
+function normalizeUser(value: unknown): FeedbackUser {
+  if (!isRecord(value)) throw new FeedbackError("invalid feedback user");
+  const role = value.role === "admin" ? "admin" : "user";
+  const id = Number(value.id);
+  const username = String(value.username || "").trim();
+  if (!Number.isFinite(id) || id <= 0 || !username) {
+    throw new FeedbackError("invalid feedback user");
+  }
+  return { id, username, role };
+}
+
+function normalizeAttachment(value: unknown): FeedbackAttachmentMetadata | null {
+  if (!isRecord(value)) return null;
+  const fileName = String(value.fileName || "").trim();
+  const originalName = String(value.originalName || "").trim();
+  const mimeType = String(value.mimeType || "").trim();
+  const size = Number(value.size);
+  if (!fileName || !originalName || !mimeType || !Number.isFinite(size) || size < 0) {
+    return null;
+  }
+  return { fileName, originalName, mimeType, size };
+}
+
+function normalizeReview(value: unknown): FeedbackReview {
+  if (!isRecord(value)) return defaultReview();
+  const status: FeedbackReviewStatus = value.status === "approved" || value.status === "rejected"
+    ? value.status
+    : "pending";
+  const rewardAmount = status === "approved" && Number.isFinite(Number(value.rewardAmount))
+    ? Number(value.rewardAmount)
+    : 0;
+  const reviewedBy = status === "pending" ? null : (() => {
+    try {
+      return normalizeUser(value.reviewedBy);
+    } catch {
+      return null;
+    }
+  })();
+  const reviewedAt = status === "pending" ? null : String(value.reviewedAt || "").trim() || null;
+
+  return {
+    status,
+    rewardAmount,
+    reviewedBy,
+    reviewedAt,
+  };
+}
+
+function validateFeedbackId(id: string) {
+  const normalized = id.trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(normalized)) {
+    throw new FeedbackError("invalid feedback id");
+  }
+  return normalized;
+}
+
+function resolvePackageDir(feedbackDir: string, packageName: string) {
+  const root = path.resolve(feedbackDir);
+  const packageDir = path.resolve(root, packageName);
+  if (packageDir !== root && packageDir.startsWith(`${root}${path.sep}`)) return packageDir;
+  throw new FeedbackError("feedback package path is outside feedback directory");
+}
+
+function feedbackJsonPath(feedbackDir: string, packageName: string) {
+  return path.join(resolvePackageDir(feedbackDir, packageName), "feedback.json");
+}
+
+export function normalizeFeedbackMetadata(value: unknown, fallbackPackageName = ""): FeedbackMetadata {
+  if (!isRecord(value)) throw new FeedbackError("invalid feedback metadata");
+  const id = String(value.id || "").trim();
+  const timestamp = String(value.timestamp || "").trim();
+  const packageName = String(value.packageName || fallbackPackageName || "").trim();
+  const description = String(value.description || "").trim();
+  if (!id || !timestamp || !packageName || !description) {
+    throw new FeedbackError("invalid feedback metadata");
+  }
+  return {
+    id,
+    timestamp,
+    packageName,
+    user: normalizeUser(value.user),
+    description,
+    attachment: normalizeAttachment(value.attachment),
+    review: normalizeReview(value.review),
+  };
 }
 
 function validateFeedbackDescription(description: string) {
@@ -224,6 +349,150 @@ export function feedbackPayloadFromMultipart(parts: MultipartPart[]): FeedbackPa
   return payload;
 }
 
+async function writeFeedbackMetadata(feedbackDir: string, metadata: FeedbackMetadata) {
+  const filePath = feedbackJsonPath(feedbackDir, metadata.packageName);
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${randomUUID()}`;
+  await fs.promises.writeFile(tempPath, `${JSON.stringify(metadata, null, 2)}\n`, { flag: "wx" });
+  await fs.promises.rename(tempPath, filePath);
+}
+
+async function withFeedbackReviewLock<T>(id: string, action: () => Promise<T>) {
+  const previous = reviewLocks.get(id) || Promise.resolve();
+  let release!: () => void;
+  const current = previous.catch(() => undefined).then(() => new Promise<void>((resolve) => {
+    release = resolve;
+  }));
+  reviewLocks.set(id, current);
+  await previous.catch(() => undefined);
+
+  try {
+    return await action();
+  } finally {
+    release();
+    if (reviewLocks.get(id) === current) {
+      reviewLocks.delete(id);
+    }
+  }
+}
+
+export async function listFeedbackPackages(feedbackDir: string, status: FeedbackReviewFilter = "pending") {
+  const root = path.resolve(feedbackDir);
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(root, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+
+  const feedbacks: FeedbackMetadata[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith("feedback-")) continue;
+    try {
+      const raw = await fs.promises.readFile(path.join(root, entry.name, "feedback.json"), "utf8");
+      const feedback = normalizeFeedbackMetadata(JSON.parse(raw), entry.name);
+      if (status === "all" || feedback.review.status === status) {
+        feedbacks.push(feedback);
+      }
+    } catch {
+      // Invalid feedback package metadata is ignored in list responses.
+    }
+  }
+
+  return feedbacks.sort((left, right) => {
+    const dateDiff = Date.parse(right.timestamp) - Date.parse(left.timestamp);
+    return dateDiff || right.id.localeCompare(left.id);
+  });
+}
+
+export async function readFeedbackPackage(feedbackDir: string, id: string) {
+  const normalizedId = validateFeedbackId(id);
+  const feedbacks = await listFeedbackPackages(feedbackDir, "all");
+  const feedback = feedbacks.find((item) => item.id === normalizedId);
+  if (!feedback) throw new FeedbackError("Feedback not found", 404);
+  return feedback;
+}
+
+export function resolveFeedbackAttachmentPath(feedbackDir: string, feedback: FeedbackMetadata) {
+  if (!feedback.attachment?.fileName) throw new FeedbackError("Feedback attachment not found", 404);
+  const packageDir = resolvePackageDir(feedbackDir, feedback.packageName);
+  const filePath = path.resolve(packageDir, feedback.attachment.fileName);
+  if (filePath !== packageDir && filePath.startsWith(`${packageDir}${path.sep}`)) return filePath;
+  throw new FeedbackError("Feedback attachment path is outside feedback directory");
+}
+
+export async function approveFeedbackPackage({
+  feedbackDir,
+  id,
+  reviewer,
+  rewardAmount,
+  creditUser,
+  reviewedAt = new Date().toISOString(),
+}: {
+  feedbackDir: string;
+  id: string;
+  reviewer: FeedbackUser;
+  rewardAmount: number;
+  creditUser: (userId: number, amount: number) => Promise<void> | void;
+  reviewedAt?: string;
+}) {
+  const normalizedId = validateFeedbackId(id);
+  const amount = Number(rewardAmount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new FeedbackError("rewardAmount must be greater than 0");
+  }
+
+  return withFeedbackReviewLock(normalizedId, async () => {
+    const feedback = await readFeedbackPackage(feedbackDir, normalizedId);
+    if (feedback.review.status !== "pending") {
+      throw new FeedbackError("Feedback already reviewed", 409);
+    }
+    await creditUser(feedback.user.id, amount);
+    const updated: FeedbackMetadata = {
+      ...feedback,
+      review: {
+        status: "approved",
+        rewardAmount: amount,
+        reviewedBy: reviewer,
+        reviewedAt,
+      },
+    };
+    await writeFeedbackMetadata(feedbackDir, updated);
+    return updated;
+  });
+}
+
+export async function rejectFeedbackPackage({
+  feedbackDir,
+  id,
+  reviewer,
+  reviewedAt = new Date().toISOString(),
+}: {
+  feedbackDir: string;
+  id: string;
+  reviewer: FeedbackUser;
+  reviewedAt?: string;
+}) {
+  const normalizedId = validateFeedbackId(id);
+  return withFeedbackReviewLock(normalizedId, async () => {
+    const feedback = await readFeedbackPackage(feedbackDir, normalizedId);
+    if (feedback.review.status !== "pending") {
+      throw new FeedbackError("Feedback already reviewed", 409);
+    }
+    const updated: FeedbackMetadata = {
+      ...feedback,
+      review: {
+        status: "rejected",
+        rewardAmount: 0,
+        reviewedBy: reviewer,
+        reviewedAt,
+      },
+    };
+    await writeFeedbackMetadata(feedbackDir, updated);
+    return updated;
+  });
+}
+
 export async function createFeedbackPackage({
   feedbackDir,
   user,
@@ -266,9 +535,11 @@ export async function createFeedbackPackage({
   const metadata = {
     id,
     timestamp,
+    packageName,
     user,
     description: normalizedDescription,
     attachment: attachmentMetadata || null,
+    review: defaultReview(),
   };
   await fs.promises.writeFile(
     path.join(packageDir, "feedback.json"),
@@ -281,5 +552,6 @@ export async function createFeedbackPackage({
     timestamp,
     packageName,
     attachment: attachmentMetadata,
+    review: metadata.review,
   };
 }

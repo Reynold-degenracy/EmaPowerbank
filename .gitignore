@@ -148,6 +148,7 @@ data/
 request-logs/
 feedback/
 .codex/
+docs/superpowers/
 .DS_Store
 
 # Local red-phase test scripts

@@ -136,7 +136,7 @@ After logging in, users can:
 - Copy the Base URL
 - See available model IDs and prices
 - Send test requests from the built-in API test panel
-- Submit feedback with a required text description and an optional image attachment
+- Submit feedback with a required text description and an optional image attachment; approved feedback can earn balance rewards
 - View daily cost statistics
 
 Base URL:
@@ -232,7 +232,7 @@ feedback/
 - Extracted usage and cost
 - Total request duration and timing breakdown
 
-`feedback/` stores one directory per submitted feedback package. Each package directory is named `feedback-<id>-<timestamp>/` and contains `feedback.json` plus the optional uploaded image attachment. The JSON file includes the feedback id, timestamp, submitting user, description, and attachment metadata.
+`feedback/` stores one directory per submitted feedback package. Each package directory is named `feedback-<id>-<timestamp>/` and contains `feedback.json` plus the optional uploaded image attachment. The JSON file includes the feedback id, timestamp, submitting user, description, attachment metadata, review status, and reward metadata. Admins can review feedback, preview image attachments, approve with a non-zero reward amount, or reject without granting balance.
 
 ## Logs Page
 
