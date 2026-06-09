@@ -35,6 +35,7 @@ import {
 import { api } from "./api";
 import { messages, type Lang, type Messages } from "./i18n";
 import { getErrorMessage } from "./lib/errors";
+import { getFeedbackApprovalDecision } from "./lib/feedbackReview";
 import {
   formatCostWithUsage,
   formatCurrencyInputValue,
@@ -1568,9 +1569,13 @@ function FeedbackReviewPanel({
   }
 
   async function approve(item: FeedbackReviewItem) {
-    const rewardAmount = Number(rewardDrafts[item.id] || 0);
     setError("");
-    if (!Number.isFinite(rewardAmount) || rewardAmount <= 0) {
+    const decision = getFeedbackApprovalDecision(
+      rewardDrafts[item.id],
+      () => window.confirm(t.confirmApproveFeedback),
+    );
+    if (!decision.ok) {
+      if (decision.reason === "cancelled") return;
       setError(t.feedbackRewardRequired);
       return;
     }
@@ -1578,7 +1583,7 @@ function FeedbackReviewPanel({
     try {
       await api<FeedbackReviewActionResponse>(`/api/admin/feedbacks/${item.id}/approve`, {
         method: "POST",
-        body: { rewardAmount },
+        body: { rewardAmount: decision.rewardAmount },
       });
       await reload();
       setRefreshToken((current) => current + 1);
