@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import path from "node:path";
 import fs from "node:fs";
 import {
+  FEEDBACK_DIR,
   REQUEST_LOG_DIR,
   clearProviderConfig,
   db,
@@ -38,6 +39,14 @@ import {
 } from "./billing.js";
 import { createGoogleGenAIClient, normalizeProviderConfig } from "./googleProvider.js";
 import { proxyMiddlewares } from "./proxy.js";
+import {
+  FEEDBACK_MAX_BODY_BYTES,
+  createFeedbackPackage,
+  feedbackPayloadFromMultipart,
+  multipartBoundary,
+  parseMultipartFields,
+  readRequestBuffer,
+} from "./feedback.js";
 import type { HttpError, RequestTiming, UserRow } from "./types.js";
 
 const app = express();
@@ -493,6 +502,30 @@ app.get("/api/request-logs", requireSession, listRequestLogs);
 app.get("/api/request-logs/:id", requireSession, getRequestLogDetail);
 app.get("/api/admin/request-logs", requireSession, requireAdmin, listRequestLogs);
 app.get("/api/admin/request-logs/:id", requireSession, requireAdmin, getRequestLogDetail);
+
+app.post("/api/feedback", requireSession, asyncHandler(async (req, res) => {
+  const boundary = multipartBoundary(req.headers["content-type"]);
+  if (!boundary) {
+    const error = new Error("feedback must use multipart/form-data") as HttpError;
+    error.status = 415;
+    throw error;
+  }
+
+  const body = await readRequestBuffer(req, FEEDBACK_MAX_BODY_BYTES);
+  const payload = feedbackPayloadFromMultipart(parseMultipartFields(body, boundary));
+  const feedback = await createFeedbackPackage({
+    feedbackDir: FEEDBACK_DIR,
+    user: {
+      id: req.user!.id,
+      username: req.user!.username,
+      role: req.user!.role,
+    },
+    description: payload.description,
+    attachment: payload.attachment,
+  });
+
+  res.status(201).json({ feedback });
+}));
 
 app.post("/api/admin/provider", requireSession, requireAdmin, (req, res) => {
   try {

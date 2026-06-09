@@ -18,10 +18,12 @@ import {
   KeyRound,
   Languages,
   LogOut,
+  MessageSquare,
   Monitor,
   Moon,
   Plus,
   Save,
+  Send,
   Shield,
   Sun,
   Trash2,
@@ -77,6 +79,7 @@ import type {
   Overview,
   PricingItem,
   ProviderInfo,
+  FeedbackSubmitResponse,
   ReloadFn,
   RequestLogDetailResponse,
   RequestLogDetailState,
@@ -90,6 +93,10 @@ import type {
   User,
 } from "./types";
 
+const FEEDBACK_ATTACHMENT_MAX_BYTES = 8 * 1024 * 1024;
+const FEEDBACK_IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,image/webp,image/bmp,image/avif,image/heic,image/heif";
+const FEEDBACK_IMAGE_NAME_PATTERN = /\.(png|jpe?g|gif|webp|bmp|avif|hei[cf])$/i;
+const FEEDBACK_IMAGE_TYPES = new Set(FEEDBACK_IMAGE_ACCEPT.split(","));
 
 function Stat({ label, value, tone = "blue" }: { label: string; value: string | number; tone?: string }) {
   return (
@@ -738,6 +745,133 @@ function ApiTestPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function isAcceptedFeedbackImage(file: File) {
+  return FEEDBACK_IMAGE_TYPES.has(file.type) || (!file.type && FEEDBACK_IMAGE_NAME_PATTERN.test(file.name));
+}
+
+function FeedbackPanel({ t, lang }: { t: Messages; lang: Lang }) {
+  const [description, setDescription] = useState("");
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const [savedPackage, setSavedPackage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [fileInputKey, setFileInputKey] = useState(0);
+
+  function selectAttachment(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] || null;
+    setError("");
+    setSavedPackage("");
+
+    if (!file) {
+      setAttachment(null);
+      return;
+    }
+    if (!isAcceptedFeedbackImage(file)) {
+      setAttachment(null);
+      setFileInputKey((current) => current + 1);
+      setError(t.feedbackImageInvalid);
+      return;
+    }
+    if (file.size > FEEDBACK_ATTACHMENT_MAX_BYTES) {
+      setAttachment(null);
+      setFileInputKey((current) => current + 1);
+      setError(t.feedbackImageTooLarge);
+      return;
+    }
+
+    setAttachment(file);
+  }
+
+  async function submitFeedback(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedDescription = description.trim();
+    setError("");
+    setSavedPackage("");
+
+    if (!trimmedDescription) {
+      setError(t.feedbackDescriptionRequired);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("description", trimmedDescription);
+    if (attachment) formData.append("attachment", attachment);
+
+    setBusy(true);
+    try {
+      const data = await api<FeedbackSubmitResponse>("/api/feedback", {
+        method: "POST",
+        body: formData,
+      });
+      setDescription("");
+      setAttachment(null);
+      setFileInputKey((current) => current + 1);
+      setSavedPackage(data.feedback.packageName);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="page-grid">
+      <section className="panel wide feedback-panel">
+        <div className="section-head">
+          <div>
+            <span className="eyebrow">{t.feedback}</span>
+            <h2>{t.feedback}</h2>
+          </div>
+        </div>
+        <form className="feedback-form" onSubmit={submitFeedback}>
+          <label>
+            {t.feedbackDescription}
+            <textarea
+              maxLength={5000}
+              required
+              value={description}
+              onChange={(event) => {
+                setDescription(event.target.value);
+                setError("");
+                setSavedPackage("");
+              }}
+            />
+          </label>
+          <label>
+            {t.feedbackAttachment}
+            <input
+              accept={FEEDBACK_IMAGE_ACCEPT}
+              key={fileInputKey}
+              onChange={selectAttachment}
+              type="file"
+            />
+          </label>
+          <div className="feedback-meta-row">
+            <span>{formatNumber(description.length, lang)} / {formatNumber(5000, lang)}</span>
+            {attachment && (
+              <span className="feedback-file-meta">
+                <strong>{attachment.name}</strong>
+                {formatNumber(Math.max(1, Math.ceil(attachment.size / 1024)), lang)} KB
+              </span>
+            )}
+          </div>
+          {error && <div className="inline-error">{error}</div>}
+          {savedPackage && (
+            <div className="inline-success" aria-live="polite">
+              <strong>{t.feedbackSubmitted}</strong>
+              <span>{t.feedbackPackageName}: <code>{savedPackage}</code></span>
+            </div>
+          )}
+          <button className="primary-btn" disabled={!description.trim() || busy} type="submit">
+            <Send size={18} aria-hidden="true" />
+            {busy ? t.processing : t.feedbackSubmit}
+          </button>
+        </form>
+      </section>
+    </div>
   );
 }
 
@@ -1734,7 +1868,7 @@ function AdminPanel({
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<"dashboard" | "admin" | "requestLogs">("dashboard");
+  const [active, setActive] = useState<"dashboard" | "admin" | "requestLogs" | "feedback">("dashboard");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [adminData, setAdminData] = useState<AdminData | null>(null);
   const [error, setError] = useState("");
@@ -1749,6 +1883,8 @@ export default function App() {
     ? t.adminConsole
     : active === "requestLogs"
       ? t.requestLogs
+      : active === "feedback"
+        ? t.feedback
       : t.userDashboard;
 
   function setLang(value: Lang) {
@@ -1855,6 +1991,10 @@ export default function App() {
             <FileText size={18} aria-hidden="true" />
             {t.requestLogs}
           </button>
+          <button className={active === "feedback" ? "active" : ""} onClick={() => setActive("feedback")} type="button">
+            <MessageSquare size={18} aria-hidden="true" />
+            {t.feedback}
+          </button>
         </nav>
       </aside>
       <section className="content">
@@ -1887,6 +2027,8 @@ export default function App() {
                   />
                 </div>
               )
+            : active === "feedback"
+              ? <FeedbackPanel t={t} lang={lang} />
             : overview && <Dashboard overview={overview} reload={loadDashboard} t={t} lang={lang} />}
       </section>
     </main>

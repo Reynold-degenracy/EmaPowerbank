@@ -14,9 +14,11 @@ import type {
 export const ROOT_DIR = process.cwd();
 export const DATA_DIR = path.join(ROOT_DIR, "data");
 export const REQUEST_LOG_DIR = path.join(ROOT_DIR, "request-logs");
+export const FEEDBACK_DIR = path.join(ROOT_DIR, "feedback");
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(REQUEST_LOG_DIR, { recursive: true });
+fs.mkdirSync(FEEDBACK_DIR, { recursive: true });
 
 export const db = new Database(path.join(DATA_DIR, "relay.sqlite"));
 db.pragma("journal_mode = WAL");

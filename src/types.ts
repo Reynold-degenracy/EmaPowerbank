@@ -166,3 +166,17 @@ export interface RequestLogDetailState {
   detail?: RequestLogDetailPayload | null;
   raw?: string;
 }
+
+export interface FeedbackSubmitResponse {
+  feedback: {
+    id: string;
+    timestamp: string;
+    packageName: string;
+    attachment?: {
+      fileName: string;
+      originalName: string;
+      mimeType: string;
+      size: number;
+    };
+  };
+}

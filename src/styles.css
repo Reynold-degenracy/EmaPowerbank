@@ -999,6 +999,68 @@ select:hover {
   min-height: 240px;
 }
 
+.feedback-panel {
+  max-width: 860px;
+}
+
+.feedback-form {
+  display: grid;
+  gap: 14px;
+}
+
+.feedback-form textarea {
+  min-height: 230px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.feedback-form .primary-btn {
+  justify-self: start;
+}
+
+.feedback-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.feedback-file-meta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.feedback-file-meta strong {
+  min-width: 0;
+  max-width: 420px;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inline-success {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #bbf7d0;
+  border-radius: 7px;
+  background: #f0fdf4;
+  color: #166534;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.inline-success code {
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
 .response-box {
   margin-top: 12px;
   display: grid;
@@ -2353,6 +2415,12 @@ tbody tr:hover {
 :root[data-theme="dark"] .inline-error {
   background: rgba(159, 18, 57, 0.18);
   color: #fecdd3;
+}
+
+:root[data-theme="dark"] .inline-success {
+  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(22, 101, 52, 0.2);
+  color: #bbf7d0;
 }
 
 :root[data-theme="dark"] .balance-hero {

@@ -136,6 +136,7 @@ Embedding 模型会统一把用量归到“嵌入”字段。对于没有 `billa
 - 复制 Base URL
 - 查看可用模型和对应价格
 - 用内置 API 测试面板发送测试请求
+- 提交反馈，包含必填文字描述和可选图片附件
 - 查看按日期的费用统计
 
 Base URL 填写：
@@ -211,6 +212,7 @@ AI Studio 上游会直接转发到 `generativelanguage.googleapis.com`。Vertex 
 ```text
 data/relay.sqlite
 request-logs/
+feedback/
 ```
 
 `data/relay.sqlite` 保存：
@@ -229,6 +231,8 @@ request-logs/
 - 响应状态和响应体
 - 提取后的用量和费用
 - 请求总耗时和分段耗时
+
+`feedback/` 保存每次提交后的反馈包目录。每个目录命名为 `feedback-<id>-<timestamp>/`，包含 `feedback.json` 和可选上传图片。JSON 文件会记录反馈 id、时间戳、提交用户、文字描述和附件元数据。
 
 ## 日志页
 
@@ -262,8 +266,10 @@ NODE_ENV=production npm start
 - 设置强 `JWT_SECRET`
 - 修改默认管理员密码
 - 限制 `data/` 和 `request-logs/` 的文件权限
+- 限制 `feedback/` 的文件权限
 - 定期备份 `data/relay.sqlite`
 - 按需清理或归档 `request-logs/`
+- 按需清理或归档 `feedback/`
 - 如果放在反向代理后面，请确保请求体大小和超时设置适合模型响应
 
 ## 验证

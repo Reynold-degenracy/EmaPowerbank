@@ -146,5 +146,10 @@ vite.config.ts.timestamp-*
 # Local relay runtime
 data/
 request-logs/
+feedback/
 .codex/
 .DS_Store
+
+# Local red-phase test scripts
+server/feedback.test.ts
+src/api.test.ts
