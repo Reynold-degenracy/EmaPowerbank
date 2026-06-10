@@ -3,8 +3,10 @@ import {
   type FormEvent,
   type MouseEvent,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -13,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  CloudUpload,
   Copy,
   Download,
   Eye,
@@ -37,8 +40,11 @@ import { api } from "./api";
 import { messages, type Lang, type Messages } from "./i18n";
 import { getErrorMessage } from "./lib/errors";
 import {
+  createFeedbackAttachmentPreviews,
   FEEDBACK_IMAGE_ACCEPT,
+  hasFeedbackDragFiles,
   mergeFeedbackAttachmentSelection,
+  revokeFeedbackAttachmentPreviews,
 } from "./lib/feedbackAttachments";
 import { getFeedbackApprovalDecision } from "./lib/feedbackReview";
 import { navigationItemsForRole, normalizeActivePage, type AppPage } from "./lib/navigation";
@@ -762,13 +768,15 @@ function ApiTestPanel({
 function FeedbackPanel({ t, lang }: { t: Messages; lang: Lang }) {
   const [description, setDescription] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [attachmentPreviews, setAttachmentPreviews] = useState(() => createFeedbackAttachmentPreviews([]));
+  const [dragOverlayVisible, setDragOverlayVisible] = useState(false);
   const [error, setError] = useState("");
   const [savedPackage, setSavedPackage] = useState("");
   const [busy, setBusy] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const dragDepthRef = useRef(0);
 
-  function selectAttachments(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files || []);
+  const applyAttachmentSelection = useCallback((files: File[]) => {
     setError("");
     setSavedPackage("");
 
@@ -783,6 +791,63 @@ function FeedbackPanel({ t, lang }: { t: Messages; lang: Lang }) {
 
     setAttachments(result.attachments);
     setFileInputKey((current) => current + 1);
+  }, [attachments, t.feedbackAttachmentsTooMany, t.feedbackImageInvalid, t.feedbackImageTooLarge]);
+
+  useEffect(() => {
+    const previews = createFeedbackAttachmentPreviews(attachments);
+    setAttachmentPreviews(previews);
+    return () => revokeFeedbackAttachmentPreviews(previews);
+  }, [attachments]);
+
+  useEffect(() => {
+    function resetDragOverlay() {
+      dragDepthRef.current = 0;
+      setDragOverlayVisible(false);
+    }
+
+    function handleDragEnter(event: DragEvent) {
+      if (!hasFeedbackDragFiles(event.dataTransfer?.types)) return;
+      event.preventDefault();
+      dragDepthRef.current += 1;
+      setDragOverlayVisible(true);
+    }
+
+    function handleDragOver(event: DragEvent) {
+      if (!hasFeedbackDragFiles(event.dataTransfer?.types)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      setDragOverlayVisible(true);
+    }
+
+    function handleDragLeave(event: DragEvent) {
+      if (!hasFeedbackDragFiles(event.dataTransfer?.types)) return;
+      event.preventDefault();
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setDragOverlayVisible(false);
+    }
+
+    function handleDrop(event: DragEvent) {
+      if (!hasFeedbackDragFiles(event.dataTransfer?.types)) return;
+      event.preventDefault();
+      const files = Array.from(event.dataTransfer?.files || []);
+      resetDragOverlay();
+      applyAttachmentSelection(files);
+    }
+
+    window.addEventListener("dragenter", handleDragEnter);
+    window.addEventListener("dragover", handleDragOver);
+    window.addEventListener("dragleave", handleDragLeave);
+    window.addEventListener("drop", handleDrop);
+    return () => {
+      window.removeEventListener("dragenter", handleDragEnter);
+      window.removeEventListener("dragover", handleDragOver);
+      window.removeEventListener("dragleave", handleDragLeave);
+      window.removeEventListener("drop", handleDrop);
+    };
+  }, [applyAttachmentSelection]);
+
+  function selectAttachments(event: ChangeEvent<HTMLInputElement>) {
+    applyAttachmentSelection(Array.from(event.target.files || []));
   }
 
   function removeAttachment(fileToRemove: File) {
@@ -848,38 +913,47 @@ function FeedbackPanel({ t, lang }: { t: Messages; lang: Lang }) {
               }}
             />
           </label>
-          <label>
-            {t.feedbackAttachment}
-            <input
-              accept={FEEDBACK_IMAGE_ACCEPT}
-              key={fileInputKey}
-              multiple
-              onChange={selectAttachments}
-              type="file"
-            />
-          </label>
+          <div className="feedback-field">
+            <span className="feedback-field-label">{t.feedbackAttachment}</span>
+            <span className="feedback-upload-control">
+              <label className="feedback-upload-button">
+                {t.feedbackChooseFiles}
+                <input
+                  accept={FEEDBACK_IMAGE_ACCEPT}
+                  className="feedback-upload-input"
+                  key={fileInputKey}
+                  multiple
+                  onChange={selectAttachments}
+                  type="file"
+                />
+              </label>
+              <span className="feedback-upload-hint">{t.feedbackDragPrompt}</span>
+            </span>
+          </div>
           <div className="feedback-meta-row">
             <span>{formatNumber(description.length, lang)} / {formatNumber(5000, lang)}</span>
-            {attachments.length > 0 && (
-              <div className="feedback-file-list">
-                {attachments.map((attachment) => (
-                  <span className="feedback-file-meta" key={`${attachment.name}-${attachment.size}-${attachment.lastModified}`}>
-                    <strong>{attachment.name}</strong>
-                    {formatNumber(Math.max(1, Math.ceil(attachment.size / 1024)), lang)} KB
+          </div>
+          {attachmentPreviews.length > 0 && (
+            <div className="feedback-local-preview" aria-label={t.feedbackPreview}>
+              {attachmentPreviews.map((preview) => (
+                <figure className="feedback-local-preview-item" key={preview.key}>
+                  <img alt={preview.file.name} src={preview.url} />
+                  <figcaption>
+                    <span>{preview.file.name}</span>
                     <button
-                      aria-label={`${t.feedbackRemoveAttachment}: ${attachment.name}`}
+                      aria-label={`${t.feedbackRemoveAttachment}: ${preview.file.name}`}
                       className="feedback-file-remove"
-                      onClick={() => removeAttachment(attachment)}
+                      onClick={() => removeAttachment(preview.file)}
                       title={t.feedbackRemoveAttachment}
                       type="button"
                     >
                       <X size={13} aria-hidden="true" />
                     </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
           {error && <div className="inline-error">{error}</div>}
           {savedPackage && (
             <div className="inline-success" aria-live="polite">
@@ -893,6 +967,15 @@ function FeedbackPanel({ t, lang }: { t: Messages; lang: Lang }) {
           </button>
         </form>
       </section>
+      {dragOverlayVisible && (
+        <div className="feedback-drop-overlay" aria-hidden="true">
+          <div className="feedback-drop-target">
+            <CloudUpload size={42} aria-hidden="true" />
+            <strong>{t.feedbackDropTitle}</strong>
+            <span>{t.feedbackDropHint}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

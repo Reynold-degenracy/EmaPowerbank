@@ -11,12 +11,43 @@ export type FeedbackAttachmentSelectionResult =
   | { ok: true; attachments: File[] }
   | { ok: false; attachments: File[]; reason: FeedbackAttachmentSelectionError };
 
+export interface FeedbackAttachmentPreview {
+  file: File;
+  key: string;
+  url: string;
+}
+
 export function isAcceptedFeedbackImage(file: File) {
   return FEEDBACK_IMAGE_TYPES.has(file.type) || (!file.type && FEEDBACK_IMAGE_NAME_PATTERN.test(file.name));
 }
 
-function fileSelectionKey(file: File) {
+export function feedbackAttachmentKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}:${file.type}`;
+}
+
+export function hasFeedbackDragFiles(types: Iterable<string> | ArrayLike<string> | null | undefined) {
+  if (!types) return false;
+  const maybeDomStringList = types as { contains?: (value: string) => boolean };
+  if (typeof maybeDomStringList.contains === "function") return maybeDomStringList.contains("Files");
+  return Array.from(types).includes("Files");
+}
+
+export function createFeedbackAttachmentPreviews(
+  attachments: File[],
+  createObjectUrl = (file: File) => URL.createObjectURL(file),
+): FeedbackAttachmentPreview[] {
+  return attachments.map((file) => ({
+    file,
+    key: feedbackAttachmentKey(file),
+    url: createObjectUrl(file),
+  }));
+}
+
+export function revokeFeedbackAttachmentPreviews(
+  previews: Array<Pick<FeedbackAttachmentPreview, "url">>,
+  revokeObjectUrl = (url: string) => URL.revokeObjectURL(url),
+) {
+  for (const preview of previews) revokeObjectUrl(preview.url);
 }
 
 export function mergeFeedbackAttachmentSelection(
@@ -32,10 +63,10 @@ export function mergeFeedbackAttachmentSelection(
     return { ok: false, attachments: current, reason: "tooLarge" };
   }
 
-  const seen = new Set(current.map(fileSelectionKey));
+  const seen = new Set(current.map(feedbackAttachmentKey));
   const attachments = [...current];
   for (const file of selected) {
-    const key = fileSelectionKey(file);
+    const key = feedbackAttachmentKey(file);
     if (seen.has(key)) continue;
     seen.add(key);
     attachments.push(file);
