@@ -150,7 +150,3 @@ feedback/
 .codex/
 docs/superpowers/
 .DS_Store
-
-# Local red-phase test scripts
-server/feedback.test.ts
-src/api.test.ts
