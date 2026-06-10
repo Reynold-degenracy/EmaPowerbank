@@ -934,7 +934,6 @@ function FeedbackPanel({ t, lang }: { t: Messages; lang: Lang }) {
             </span>
           </div>
           <div className="feedback-meta-row">
-            <span className="feedback-description-help">{t.feedbackDescriptionHelp}</span>
             <span>{formatNumber(description.length, lang)} / {formatNumber(5000, lang)}</span>
           </div>
           {attachmentPreviews.length > 0 && (
@@ -959,15 +958,15 @@ function FeedbackPanel({ t, lang }: { t: Messages; lang: Lang }) {
             </div>
           )}
           {error && <div className="inline-error">{error}</div>}
+          <button className="primary-btn" disabled={!description.trim() || busy} type="submit">
+            <Send size={18} aria-hidden="true" />
+            {busy ? t.processing : t.feedbackSubmit}
+          </button>
           {submitted && (
             <div className="inline-success" aria-live="polite">
               <strong>{t.feedbackSubmitted}</strong>
             </div>
           )}
-          <button className="primary-btn" disabled={!description.trim() || busy} type="submit">
-            <Send size={18} aria-hidden="true" />
-            {busy ? t.processing : t.feedbackSubmit}
-          </button>
         </form>
       </section>
       {dragOverlayVisible && (
@@ -1769,20 +1768,25 @@ function FeedbackReviewPanel({
           const isBusy = busyIds.has(item.id);
           const reviewed = item.review.status !== "pending";
           return (
-            <article className="feedback-review-card" key={item.id}>
+            <article className={`feedback-review-card${item.attachments.length === 0 ? " feedback-review-card-no-attachments" : ""}`} key={item.id}>
               <div className="feedback-review-main">
                 <div className="feedback-review-head">
                   <div>
                     <strong>{item.user.username}</strong>
-                    <span>{t.feedbackReviewSubmittedAt}: {formatDateTimeSeconds(item.timestamp, lang)}</span>
                   </div>
                   <span className={`feedback-status feedback-status-${item.review.status}`}>
                     {feedbackStatusLabel(item.review.status, t)}
                   </span>
                 </div>
-                <p>{item.description}</p>
-                <div className="feedback-review-meta">
+                <label className="feedback-review-description">
+                  <span>{t.feedbackDescription}</span>
+                  <textarea readOnly value={item.description} />
+                </label>
+                <div className="feedback-review-description-meta">
+                  <span><strong>{t.feedbackReviewSubmittedAt}</strong>{formatDateTimeSeconds(item.timestamp, lang)}</span>
                   <span><strong>{t.feedbackPackageName}</strong><code>{item.packageName}</code></span>
+                </div>
+                <div className="feedback-review-meta">
                   {item.attachments.length > 0 ? (
                     <span><strong>{t.feedbackAttachment}</strong><code>{item.attachments.map((attachment) => attachment.originalName).join(", ")}</code></span>
                   ) : (

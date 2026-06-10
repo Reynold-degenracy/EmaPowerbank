@@ -312,11 +312,13 @@ select:hover {
   color: #ffffff;
   padding: 0 14px;
   font-weight: 700;
+  text-decoration: none;
 }
 
 .primary-btn:hover,
 .icon-btn.primary:hover {
   background: var(--blue-700);
+  text-decoration: none;
 }
 
 .primary-btn.full {
@@ -1092,18 +1094,12 @@ select:hover {
 .feedback-meta-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 12px;
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
-}
-
-.feedback-description-help {
-  min-width: min(520px, 100%);
-  max-width: 760px;
-  line-height: 1.45;
 }
 
 .feedback-file-remove {
@@ -1259,12 +1255,16 @@ select:hover {
 
 .feedback-review-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 260px);
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
+  gap: 16px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-soft);
   padding: 12px;
+}
+
+.feedback-review-card-no-attachments {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .feedback-review-main {
@@ -1291,10 +1291,68 @@ select:hover {
   font-weight: 700;
 }
 
-.feedback-review-card p {
+.feedback-review-description {
   margin: 0;
-  color: var(--text);
+  display: grid;
+  gap: 6px;
+}
+
+.feedback-review-description span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.feedback-review-description textarea {
+  width: 100%;
+  min-height: 108px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  color: #202124;
+  padding: 10px 12px;
+  font: inherit;
   line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.feedback-review-description textarea:focus {
+  outline: 3px solid rgba(37, 99, 235, 0.18);
+  outline-offset: 1px;
+}
+
+.feedback-review-description textarea:read-only {
+  cursor: default;
+}
+
+.feedback-review-description textarea::selection {
+  background: rgba(37, 99, 235, 0.2);
+  color: #202124;
+}
+
+.feedback-review-description-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+}
+
+.feedback-review-description-meta span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.feedback-review-description-meta strong {
+  color: var(--muted);
+}
+
+.feedback-review-description-meta code {
+  min-width: 0;
+  color: var(--text);
   overflow-wrap: anywhere;
 }
 
@@ -1421,9 +1479,9 @@ select:hover {
 
 .feedback-preview img {
   display: block;
-  width: 190px;
-  flex: 0 0 190px;
-  max-height: 220px;
+  width: 260px;
+  flex: 0 0 260px;
+  max-height: 320px;
   border: 1px solid var(--line);
   border-radius: 8px;
   object-fit: contain;
